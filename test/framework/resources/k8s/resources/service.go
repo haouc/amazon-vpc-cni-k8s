@@ -15,6 +15,7 @@ package resources
 
 import (
 	"context"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"time"
 
 	"github.com/aws/amazon-vpc-cni-k8s/test/framework/utils"
@@ -29,6 +30,7 @@ type ServiceManager interface {
 	GetService(ctx context.Context, namespace string, name string) (*v1.Service, error)
 	CreateService(ctx context.Context, service *v1.Service) (*v1.Service, error)
 	DeleteService(ctx context.Context, service *v1.Service) error
+	DeleteAndWaitTillServiceIsDeleted(ctx context.Context, service *v1.Service) error
 }
 
 type defaultServiceManager struct {
@@ -76,4 +78,22 @@ func (s *defaultServiceManager) DeleteService(ctx context.Context, service *v1.S
 	}
 
 	return nil
+}
+
+func (s *defaultServiceManager) DeleteAndWaitTillServiceIsDeleted(ctx context.Context, service *v1.Service) error {
+	err := s.k8sClient.Delete(ctx, service)
+	if err != nil {
+		return err
+	}
+	observedService := &v1.Service{}
+	return wait.PollImmediate(utils.PollIntervalShort, time.Second*120, func() (done bool, err error){
+		err = s.k8sClient.Get(context.Background(), utils.NamespacedName(service), observedService)
+		if err != nil {
+			if errors.IsNotFound(err) {
+				return true, nil
+			}
+			return true, err
+		}
+		return false, nil
+	})
 }
