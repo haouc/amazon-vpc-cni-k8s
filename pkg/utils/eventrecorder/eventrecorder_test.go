@@ -24,28 +24,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 var ctrl *gomock.Controller
-var fakeRecorder *record.FakeRecorder
+var fakeRecorder *events.FakeRecorder
 
 type testMocks struct {
 	ctrl          *gomock.Controller
-	mockK8sClient client.Client
+	mockK8SClient client.Client
+	mockcachedK8SClient client.Client
 }
 
 func setup(t *testing.T) *testMocks {
 	ctrl = gomock.NewController(t)
 	k8sSchema := runtime.NewScheme()
-	k8sClient := testclient.NewFakeClientWithScheme(k8sSchema)
+	K8SClient :=    testclient.NewClientBuilder().WithScheme(k8sSchema).Build()
+	cachedK8SClient := testclient.NewClientBuilder().WithScheme(k8sSchema).Build()
 	clientgoscheme.AddToScheme(k8sSchema)
 
 	return &testMocks{
 		ctrl:          ctrl,
-		mockK8sClient: k8sClient,
+		mockK8SClient: K8SClient,
+		mockcachedK8SClient: cachedK8SClient,
 	}
 }
 
@@ -54,10 +57,11 @@ func TestBroadcastEvents(t *testing.T) {
 	defer m.ctrl.Finish()
 	ctx := context.Background()
 
-	fakeRecorder = record.NewFakeRecorder(3)
+	fakeRecorder = events.NewFakeRecorder(3)
 	mockEventRecorder := &EventRecorder{
-		recorder:  fakeRecorder,
-		k8sClient: m.mockK8sClient,
+		Recorder:  fakeRecorder,
+		RawK8SClient: m.mockK8SClient,
+		CachedK8SClient: m.mockcachedK8SClient,
 	}
 
 	labels := map[string]string{"k8s-app": "aws-node"}
@@ -90,7 +94,7 @@ func TestBroadcastEvents(t *testing.T) {
 
 	//Create above fake pods
 	for _, mockPod := range pods {
-		_ = mockEventRecorder.k8sClient.Create(ctx, &mockPod)
+		_ = mockEventRecorder.CachedK8SClient.Create(ctx, &mockPod)
 	}
 
 	// Testing missing permissions event case: failed to call
