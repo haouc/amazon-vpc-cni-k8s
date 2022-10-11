@@ -1485,7 +1485,7 @@ func (cache *EC2InstanceMetadataCache) IsPrefixDelegationSupported() bool {
 }
 
 // AllocIPAddresses allocates numIPs of IP address on an ENI
-func (cache *EC2InstanceMetadataCache) AllocIPAddresses(eniID string, numIPs int) (*ec2.AssignPrivateIpAddressesOutput, error) {
+func (c *AWSUtilsContext) AllocIPAddresses(eniID string, numIPs int) (*ec2.AssignPrivateIpAddressesOutput, error) {
 	var needIPs = numIPs
 
 	ipLimit := cache.GetENIIPv4Limit()
