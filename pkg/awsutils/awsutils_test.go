@@ -31,13 +31,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws/awserr"
 
 	mock_ec2wrapper "github.com/aws/amazon-vpc-cni-k8s/pkg/ec2wrapper/mocks"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/events"
 	testclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
 )
 
 const (
@@ -146,7 +146,7 @@ func setupEventRecorder(t *testing.T) *eventrecorder.EventRecorder {
 	clientgoscheme.AddToScheme(k8sSchema)
 
 	mockEventRecorder := &eventrecorder.EventRecorder{
-		Recorder:  fakeRecorder,
+		Recorder:        fakeRecorder,
 		RawK8SClient:    testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
 		CachedK8SClient: testclient.NewClientBuilder().WithScheme(k8sSchema).Build(),
 	}
@@ -249,7 +249,7 @@ func TestAWSGetFreeDeviceNumberOnErr(t *testing.T) {
 	mockEC2.EXPECT().DescribeInstancesWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, errors.New("error on DescribeInstancesWithContext"))
 
 	ins := &AWSUtilsContext{ec2SVC: mockEC2}
-	ins.ec2InstanceMetadataCache = &EC2InstanceMetadataCache{}	
+	ins.ec2InstanceMetadataCache = &EC2InstanceMetadataCache{}
 	_, err := ins.awsGetFreeDeviceNumber()
 	assert.Error(t, err)
 }
@@ -414,8 +414,8 @@ func TestAllocENI(t *testing.T) {
 	mockEC2.EXPECT().ModifyNetworkInterfaceAttributeWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	ins := &AWSUtilsContext{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+		ec2SVC:                   mockEC2,
+		imds:                     TypedIMDS{mockMetadata},
 		ec2InstanceMetadataCache: &EC2InstanceMetadataCache{},
 	}
 	ins.eventRecorder = setupEventRecorder(t)
@@ -449,8 +449,8 @@ func TestAllocENINoFreeDevice(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	ins := &AWSUtilsContext{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+		ec2SVC:                   mockEC2,
+		imds:                     TypedIMDS{mockMetadata},
 		ec2InstanceMetadataCache: &EC2InstanceMetadataCache{},
 	}
 	ins.eventRecorder = setupEventRecorder(t)
@@ -486,8 +486,8 @@ func TestAllocENIMaxReached(t *testing.T) {
 	mockEC2.EXPECT().DeleteNetworkInterfaceWithContext(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 
 	ins := &AWSUtilsContext{
-		ec2SVC: mockEC2,
-		imds:   TypedIMDS{mockMetadata},
+		ec2SVC:                   mockEC2,
+		imds:                     TypedIMDS{mockMetadata},
 		ec2InstanceMetadataCache: &EC2InstanceMetadataCache{},
 	}
 	ins.eventRecorder = setupEventRecorder(t)
@@ -626,7 +626,7 @@ func TestAllocIPAddresses(t *testing.T) {
 
 	cache := &EC2InstanceMetadataCache{instanceType: "c5n.18xlarge"}
 	ins := &AWSUtilsContext{ec2SVC: mockEC2, ec2InstanceMetadataCache: cache}
-	err := ins.AllocIPAddresses(eniID, 5)
+	_, err := ins.AllocIPAddresses(eniID, 5)
 	assert.NoError(t, err)
 
 	// when required IP numbers(50) is higher than ENI's limit(49)
@@ -643,7 +643,7 @@ func TestAllocIPAddresses(t *testing.T) {
 
 	cache = &EC2InstanceMetadataCache{instanceType: "c5n.18xlarge"}
 	ins = &AWSUtilsContext{ec2SVC: mockEC2, ec2InstanceMetadataCache: cache}
-	err = ins.AllocIPAddresses(eniID, 50)
+	_, err = ins.AllocIPAddresses(eniID, 50)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
@@ -680,9 +680,9 @@ func TestAllocPrefixAddresses(t *testing.T) {
 	}
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, nil)
 
-        cache := &EC2InstanceMetadataCache{instanceType: "c5n.18xlarge"}
-	ins := &AWSUtilsContext{ec2SVC: mockEC2, ec2InstanceMetadataCache: cache, enablePrefixDelegation: true}	
-	err := ins.AllocIPAddresses(eniID, 1)
+	cache := &EC2InstanceMetadataCache{instanceType: "c5n.18xlarge"}
+	ins := &AWSUtilsContext{ec2SVC: mockEC2, ec2InstanceMetadataCache: cache, enablePrefixDelegation: true}
+	_, err := ins.AllocIPAddresses(eniID, 1)
 	assert.NoError(t, err)
 
 	// Adding 0 should do nothing
@@ -699,7 +699,7 @@ func TestAllocPrefixesAlreadyFull(t *testing.T) {
 		Ipv4PrefixCount:    aws.Int64(1),
 	}
 	cache := &EC2InstanceMetadataCache{instanceType: "t3.xlarge"}
-	ins := &AWSUtilsContext{ec2SVC: mockEC2, ec2InstanceMetadataCache: cache, enablePrefixDelegation: true}		
+	ins := &AWSUtilsContext{ec2SVC: mockEC2, ec2InstanceMetadataCache: cache, enablePrefixDelegation: true}
 
 	retErr := awserr.New("PrivateIpAddressLimitExceeded", "Too many IPs already allocated", nil)
 	mockEC2.EXPECT().AssignPrivateIpAddressesWithContext(gomock.Any(), input, gomock.Any()).Return(nil, retErr)
@@ -996,7 +996,7 @@ func TestEC2InstanceMetadataCache_buildENITags(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			cache := &EC2InstanceMetadataCache{instanceID: tt.fields.instanceID, additionalENITags: tt.fields.additionalENITags}
 			ins := &AWSUtilsContext{
-				clusterName:       tt.fields.clusterName,
+				clusterName:              tt.fields.clusterName,
 				ec2InstanceMetadataCache: cache,
 			}
 			got := ins.buildENITags()
@@ -1577,14 +1577,14 @@ func TestEC2InstanceMetadataCache_TagENI(t *testing.T) {
 			for _, call := range tt.fields.createTagsCalls {
 				mockEC2.EXPECT().CreateTagsWithContext(gomock.Any(), call.input).Return(&ec2.CreateTagsOutput{}, call.err).AnyTimes()
 			}
-			
+
 			cache := &EC2InstanceMetadataCache{
 				instanceID:        tt.fields.instanceID,
 				additionalENITags: tt.fields.additionalENITags,
 			}
 			ins := &AWSUtilsContext{
-				ec2SVC:            mockEC2,
-				clusterName:       tt.fields.clusterName,
+				ec2SVC:                   mockEC2,
+				clusterName:              tt.fields.clusterName,
 				ec2InstanceMetadataCache: cache,
 			}
 			err := ins.TagENI(tt.args.eniID, tt.args.currentTags)

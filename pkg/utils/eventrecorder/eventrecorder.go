@@ -36,6 +36,7 @@ const (
 	awsNode      = "aws-node"
 	specNodeName = "spec.nodeName"
 	labelK8sapp  = "k8s-app"
+	EventReason  = "AwsNodeNotificationToRc"
 )
 
 type EventRecorder struct {
@@ -52,15 +53,15 @@ func New(rawK8SClient, cachedK8SClient client.Client) (*EventRecorder, error) {
 		return nil, err
 	}
 	eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{
-	       Interface: clientSet.EventsV1(),
-       })
-       stopCh := make(chan struct{})
+		Interface: clientSet.EventsV1(),
+	})
+	stopCh := make(chan struct{})
 	eventBroadcaster.StartRecordingToSink(stopCh)
 
 	eventRecorder := &EventRecorder{}
 	eventRecorder.Recorder = eventBroadcaster.NewRecorder(clientgoscheme.Scheme, "aws-node")
 	eventRecorder.RawK8SClient = rawK8SClient
-       eventRecorder.CachedK8SClient = cachedK8SClient
+	eventRecorder.CachedK8SClient = cachedK8SClient
 
 	return eventRecorder, nil
 
@@ -93,7 +94,7 @@ func (e *EventRecorder) findMyNode(ctx context.Context) (corev1.Node, error) {
 	var node corev1.Node
 	// Find my node
 	err := e.CachedK8SClient.Get(ctx, types.NamespacedName{Name: myNodeName}, &node)
-	log.Debugf("Node found %q - labels - %q", node.Name, len(node.Labels))
+	log.Debugf("Node found %s - labels - %d", node.Name, len(node.Labels))
 
 	return node, err
 }
@@ -115,8 +116,8 @@ func (e *EventRecorder) SendNodeEvent(eventType, reason, action, message string)
 	nodeCopy.SetUID(types.UID(myNodeName))
 
 	e.Recorder.Eventf(nodeCopy, nil, eventType, reason, action, message)
-        log.Debugf("Sent node event: eventType: %s, reason: %s, message: %s, action %s", eventType, reason, message, action)
+	log.Debugf("Sent node event: eventType: %s, reason: %s, message: %s, action %s", eventType, reason, message, action)
 	e.BroadcastEvent(eventType, reason, message)
-	log.Debugf("Sent pod event")
+	log.Debugf("Sent node event")
 	return nil
 }

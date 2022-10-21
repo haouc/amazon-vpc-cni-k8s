@@ -144,7 +144,7 @@ func eniV1RequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Requ
 func eniConfigRequestHandler(ipam *IPAMContext) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		myENIConfig, err := eniconfig.GetNodeSpecificENIConfigName(ctx, ipam.cachedK8SClient, ipam.eventRecorder, false)
+		myENIConfig, err := eniconfig.GetNodeSpecificENIConfigNameAndSendEvent(ctx, ipam.cachedK8SClient, ipam.eventRecorder, false)
 		if err != nil {
 			log.Errorf("Failed to get ENI config: %v", err)
 			http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)

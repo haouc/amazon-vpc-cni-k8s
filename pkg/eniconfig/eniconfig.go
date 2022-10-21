@@ -25,8 +25,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
-	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/eventrecorder"
+	"github.com/aws/amazon-vpc-cni-k8s/pkg/utils/logger"
 )
 
 const (
@@ -71,7 +71,7 @@ type ENIConfigInfo struct {
 
 // MyENIConfig returns the ENIConfig applicable to the particular node
 func MyENIConfig(ctx context.Context, k8sClient client.Client, eventRecorder *eventrecorder.EventRecorder, generate_event bool) (*v1alpha1.ENIConfigSpec, error) {
-	eniConfigName, err := GetNodeSpecificENIConfigName(ctx, k8sClient, eventRecorder, generate_event)
+	eniConfigName, err := GetNodeSpecificENIConfigNameAndSendEvent(ctx, k8sClient, eventRecorder, generate_event)
 	if err != nil {
 		log.Debugf("Error while retrieving Node name")
 	}
@@ -118,7 +118,7 @@ func getEniConfigLabelDef() string {
 	return defaultEniConfigLabelDef
 }
 
-func GetNodeSpecificENIConfigName(ctx context.Context, k8sClient client.Client, eventRecorder *eventrecorder.EventRecorder, generate_event bool) (string, error) {
+func GetNodeSpecificENIConfigNameAndSendEvent(ctx context.Context, k8sClient client.Client, eventRecorder *eventrecorder.EventRecorder, generate_event bool) (string, error) {
 	var eniConfigName string
 
 	log.Infof("Get Node Info for: %s", os.Getenv("MY_NODE_NAME"))
@@ -130,21 +130,23 @@ func GetNodeSpecificENIConfigName(ctx context.Context, k8sClient client.Client, 
 	}
 
 	//Derive ENIConfig Name from either externally managed label, Node Annotations or Labels
-	val, ok := node.GetLabels()[externalEniConfigLabel]
+	labels := node.GetLabels()
+	eniConfigName, ok := labels[externalEniConfigLabel]
 	if !ok {
-		val, ok = node.GetAnnotations()[getEniConfigAnnotationDef()]
+		eniConfigName, ok = node.GetAnnotations()[getEniConfigAnnotationDef()]
 		if !ok {
-			val, ok = node.GetLabels()[getEniConfigLabelDef()]
+			eniConfigName, ok = node.GetLabels()[getEniConfigLabelDef()]
 			if !ok {
-				val = eniConfigDefault
+				eniConfigName = eniConfigDefault
 			}
 		}
 	}
 
-	eniConfigName = val
-	if val != eniConfigDefault && generate_event {
+	_, hasLabelled := labels[eniConfigLabel]
+	if !hasLabelled && eniConfigName != eniConfigDefault && generate_event {
 		// Signal event to VPC RC that the custom networking is enabled
-			eventRecorder.SendNodeEvent(corev1.EventTypeNormal, "AwsNodeNotification", "CustomNetworkingEnabled", eniConfigLabel+"="+eniConfigName)
+		eventRecorder.SendNodeEvent(corev1.EventTypeNormal, eventrecorder.EventReason, "CustomNetworkingEnabled", eniConfigLabel+"="+eniConfigName)
+		log.Infof("Send an event to notify RC custom networking is enabled. Config name should be labelled on node as %s", eniConfigName)
 	}
 
 	return eniConfigName, nil

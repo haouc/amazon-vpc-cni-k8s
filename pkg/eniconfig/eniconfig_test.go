@@ -236,7 +236,7 @@ func TestMyENIConfig(t *testing.T) {
 				assert.NoError(t, err)
 			}
 
-			myENIConfig, err := MyENIConfig(ctx, k8sClient)
+			myENIConfig, err := MyENIConfig(ctx, k8sClient, nil, false)
 			if tt.wantErr != nil {
 				assert.EqualError(t, err, tt.wantErr.Error())
 			} else {

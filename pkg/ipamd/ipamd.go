@@ -377,10 +377,10 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 	c.enableIPv6 = isIPv6Enabled()
 
 	eventRecorder, err := eventrecorder.New(rawK8SClient, cachedK8SClient)
- 	if err != nil {
- 		return nil, errors.Wrap(err, "ipamd: can not initialize event recorder")
- 	}
-        c.eventRecorder = eventRecorder
+	if err != nil {
+		return nil, errors.Wrap(err, "ipamd: can not initialize event recorder")
+	}
+	c.eventRecorder = eventRecorder
 
 	c.disableENIProvisioning = disablingENIProvisioning()
 
@@ -437,7 +437,6 @@ func New(rawK8SClient client.Client, cachedK8SClient client.Client) (*IPAMContex
 		// Ignoring errors since we will retry in 30s
 		go wait.Forever(func() { _ = c.awsClient.RefreshSGIDs(mac) }, 30*time.Second)
 	}
-        
 
 	return c, nil
 }
@@ -549,16 +548,12 @@ func (c *IPAMContext) nodeInit() error {
 
 	if c.enablePodENI {
 		if c.useCustomNetworking {
-			eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(ctx, c.cachedK8SClient, c.eventRecorder, true)
-			if err == nil && eniConfigName != "default" {
-				// Signal event to VPC RC that the custom networking is enabled
-				c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, "AwsNodeNotification", "CustomNetworkingEnabled", vpcENIConfigLabel+"="+eniConfigName)
-			}
+			eniconfig.GetNodeSpecificENIConfigNameAndSendEvent(ctx, c.cachedK8SClient, c.eventRecorder, true)
 		}
 
 		if metadataResult.TrunkENI != "" {
 			// Signal event to VPC RC that the node has a trunk already
-			c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, "AwsNodeNotification", "TrunkAttached", "vpc.amazonaws.com/has-trunk-attached=true")
+			log.Debugf("Trunk interface (%s) has been attached to this node already.", metadataResult.TrunkENI)
 		} else {
 			// Check if we want to ask for one
 			c.askForTrunkENIIfNeeded(ctx)
@@ -1196,11 +1191,12 @@ func (c *IPAMContext) askForTrunkENIIfNeeded(ctx context.Context) {
 	if c.enablePodENI && c.dataStore.GetTrunkENI() == "" {
 		// Check that there is room for a trunk ENI to be attached:
 		if c.dataStore.GetENIs() >= (c.maxENI - c.unmanagedENI) {
-			log.Debug("No slot available for a trunk ENI to be attached. Not labeling the node")
+			log.Debug("No slot available for a trunk ENI to be attached. Will not create a node event for resource controller")
 			return
 		}
 		// We need to signal that VPC Resource Controller needs to attach a trunk ENI
-		c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, "AwsNodeNotification", "TrunkNotAttached", "vpc.amazonaws.com/has-trunk-attached=false")
+		log.Debug("VPC CNI is asking RC to initialize trunk interface")
+		c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, eventrecorder.EventReason, "NeedTrunk", "vpc.amazonaws.com/has-trunk-attached=false")
 	}
 }
 
@@ -1311,7 +1307,7 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 
 		if c.enablePodENI && metadataResult.TrunkENI != "" {
 			// Signal event to VPC RC that the node has a trunk already
-			c.eventRecorder.SendNodeEvent(corev1.EventTypeNormal, "AwsNodeNotification", "TrunkAttached", "vpc.amazonaws.com/has-trunk-attached=true")
+			log.Debugf("Trunk interface (%s) has been added to the node already.", metadataResult.TrunkENI)
 		}
 		// Update trunk ENI
 		trunkENI = metadataResult.TrunkENI
