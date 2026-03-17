@@ -1,9 +1,5 @@
 package sgpp
 
-import (
-	"os"
-)
-
 const vlanInterfacePrefix = "vlan"
 
 // BuildHostVethNamePrefix computes the name prefix for host-side veth pairs for SGPP pods
@@ -22,13 +18,14 @@ func BuildHostVethNamePrefix(hostVethNamePrefix string, podSGEnforcingMode Enfor
 
 // LoadEnforcingModeFromEnv tries to load the enforcing mode from environment variable and fall-back to DefaultEnforcingMode.
 func LoadEnforcingModeFromEnv() EnforcingMode {
-	envVal, _ := os.LookupEnv(envEnforcingMode)
-	switch envVal {
-	case string(EnforcingModeStrict):
-		return EnforcingModeStrict
-	case string(EnforcingModeStandard):
-		return EnforcingModeStandard
-	default:
-		return DefaultEnforcingMode
-	}
+	// envVal, _ := os.LookupEnv(envEnforcingMode)
+	// switch envVal {
+	// case string(EnforcingModeStrict):
+	// 	return EnforcingModeStrict
+	// case string(EnforcingModeStandard):
+	// 	return EnforcingModeStandard
+	// default:
+	// 	return DefaultEnforcingMode
+	// }
+	return DefaultEnforcingMode
 }

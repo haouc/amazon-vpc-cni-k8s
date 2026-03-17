@@ -19,7 +19,6 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 
 	multiErr "github.com/hashicorp/go-multierror"
@@ -98,93 +97,93 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 	ipAddrs := []*rpc.IPAllocationMetadata{}
 
 	// var interfacesCount int
-	if s.ipamContext.enablePodENI {
-		// Check pod spec for Branch ENI
-		pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
-		if err != nil {
-			log.Warnf("Send AddNetworkReply: Failed to get pod: %v", err)
+	// Check pod spec for Branch ENI
+	pod, err := s.ipamContext.GetPod(in.K8S_POD_NAME, in.K8S_POD_NAMESPACE)
+	if err != nil {
+		log.Warnf("Send AddNetworkReply: Failed to get pod: %v", err)
+		return &failureResponse, nil
+	}
+	if val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]; branch && s.ipamContext.enablePodENI {
+		// limits := pod.Spec.Containers[0].Resources.Limits
+
+		// for resName := range limits {
+		// 	if strings.HasPrefix(string(resName), "vpc.amazonaws.com/pod-eni") {
+
+		if in.RequiresMultiNICAttachment {
+			log.Info("SGP pod doesn't support multiple NIC attachments for pod, falling back to default one interface per pod")
+		}
+		// Check that we have a trunk
+		trunkENI := s.ipamContext.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI()
+		if trunkENI == "" {
+			log.Warn("Send AddNetworkReply: No trunk ENI found, cannot add a pod ENI")
 			return &failureResponse, nil
 		}
-		limits := pod.Spec.Containers[0].Resources.Limits
+		trunkENILinkIndex, err = s.ipamContext.getTrunkLinkIndex()
+		if err != nil {
+			log.Warn("Send AddNetworkReply: No trunk ENI Link Index found, cannot add a pod ENI")
+			return &failureResponse, nil
+		}
+		// val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
+		// if branch {
+		// Parse JSON data
+		var podENIData []PodENIData
+		err := json.Unmarshal([]byte(val), &podENIData)
+		if err != nil || len(podENIData) < 1 {
+			log.Errorf("Failed to unmarshal PodENIData JSON: %v", err)
+			return &failureResponse, nil
+		}
+		firstENI := podENIData[0]
+		// Get pod IPv4 or IPv6 address based on mode
+		if s.ipamContext.enableIPv6 {
+			ipv6Addr = firstENI.IPV6Addr
+		} else {
+			ipv4Addr = firstENI.PrivateIP
+		}
+		branchENIMAC = firstENI.IfAddress
+		vlanID = firstENI.VlanID
+		log.Debugf("Pod vlandId: %d", vlanID)
 
-		for resName := range limits {
-			if strings.HasPrefix(string(resName), "vpc.amazonaws.com/pod-eni") {
-
-				if in.RequiresMultiNICAttachment {
-					log.Info("SGP pod doesn't support multiple NIC attachments for pod, falling back to default one interface per pod")
-				}
-				// Check that we have a trunk
-				trunkENI := s.ipamContext.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI()
-				if trunkENI == "" {
-					log.Warn("Send AddNetworkReply: No trunk ENI found, cannot add a pod ENI")
-					return &failureResponse, nil
-				}
-				trunkENILinkIndex, err = s.ipamContext.getTrunkLinkIndex()
-				if err != nil {
-					log.Warn("Send AddNetworkReply: No trunk ENI Link Index found, cannot add a pod ENI")
-					return &failureResponse, nil
-				}
-				val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
-				if branch {
-					// Parse JSON data
-					var podENIData []PodENIData
-					err := json.Unmarshal([]byte(val), &podENIData)
-					if err != nil || len(podENIData) < 1 {
-						log.Errorf("Failed to unmarshal PodENIData JSON: %v", err)
-						return &failureResponse, nil
-					}
-					firstENI := podENIData[0]
-					// Get pod IPv4 or IPv6 address based on mode
-					if s.ipamContext.enableIPv6 {
-						ipv6Addr = firstENI.IPV6Addr
-					} else {
-						ipv4Addr = firstENI.PrivateIP
-					}
-					branchENIMAC = firstENI.IfAddress
-					vlanID = firstENI.VlanID
-					log.Debugf("Pod vlandId: %d", vlanID)
-
-					if (ipv4Addr == "" && ipv6Addr == "") || branchENIMAC == "" || vlanID == 0 {
-						log.Errorf("Failed to parse pod-ENI annotation: %s", val)
-						return &failureResponse, nil
-					}
-					var subnetCIDR *net.IPNet
-					if s.ipamContext.enableIPv6 {
-						_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetV6CIDR)
-						if err != nil {
-							log.Errorf("Failed to parse V6 subnet CIDR: %s", firstENI.SubnetV6CIDR)
-							return &failureResponse, nil
-						}
-					} else {
-						_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetCIDR)
-						if err != nil {
-							log.Errorf("Failed to parse V4 subnet CIDR: %s", firstENI.SubnetCIDR)
-							return &failureResponse, nil
-						}
-					}
-					var gw net.IP
-					// For IPv6, the gateway is derived from the RA route on the primary ENI. The primary ENI is always in the same subnet as the trunk and branch ENI.
-					// For IPv4, the gateway is always the .1 address for the subnet CIDR.
-					if s.ipamContext.enableIPv6 {
-						gw = networkutils.GetIPv6Gateway()
-					} else {
-						gw = networkutils.GetIPv4Gateway(subnetCIDR)
-					}
-					podENISubnetGW = gw.String()
-					deviceNumber = -1 // Not needed for branch ENI, they depend on trunkENIDeviceIndex
-
-					ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
-						IPv4Addr:     ipv4Addr,
-						IPv6Addr:     ipv6Addr,
-						DeviceNumber: int32(deviceNumber),
-						RouteTableId: int32(deviceNumber) + 1, // This will always be device number + 1 as SGP won't run on multi-NIC
-					})
-				} else {
-					log.Infof("Send AddNetworkReply: failed to get Branch ENI resource")
-					return &failureResponse, nil
-				}
+		if (ipv4Addr == "" && ipv6Addr == "") || branchENIMAC == "" || vlanID == 0 {
+			log.Errorf("Failed to parse pod-ENI annotation: %s", val)
+			return &failureResponse, nil
+		}
+		var subnetCIDR *net.IPNet
+		if s.ipamContext.enableIPv6 {
+			_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetV6CIDR)
+			if err != nil {
+				log.Errorf("Failed to parse V6 subnet CIDR: %s", firstENI.SubnetV6CIDR)
+				return &failureResponse, nil
+			}
+		} else {
+			_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetCIDR)
+			if err != nil {
+				log.Errorf("Failed to parse V4 subnet CIDR: %s", firstENI.SubnetCIDR)
+				return &failureResponse, nil
 			}
 		}
+		var gw net.IP
+		// For IPv6, the gateway is derived from the RA route on the primary ENI. The primary ENI is always in the same subnet as the trunk and branch ENI.
+		// For IPv4, the gateway is always the .1 address for the subnet CIDR.
+		if s.ipamContext.enableIPv6 {
+			gw = networkutils.GetIPv6Gateway()
+		} else {
+			gw = networkutils.GetIPv4Gateway(subnetCIDR)
+		}
+		podENISubnetGW = gw.String()
+		deviceNumber = -1 // Not needed for branch ENI, they depend on trunkENIDeviceIndex
+
+		ipAddrs = append(ipAddrs, &rpc.IPAllocationMetadata{
+			IPv4Addr:     ipv4Addr,
+			IPv6Addr:     ipv6Addr,
+			DeviceNumber: int32(deviceNumber),
+			RouteTableId: int32(deviceNumber) + 1, // This will always be device number + 1 as SGP won't run on multi-NIC
+		})
+		// } else {
+		// 	log.Infof("Send AddNetworkReply: failed to get Branch ENI resource")
+		// 	return &failureResponse, nil
+		// }
+		// 	}
+		// }
 	}
 
 	if s.ipamContext.enableIPv4 && ipv4Addr == "" ||

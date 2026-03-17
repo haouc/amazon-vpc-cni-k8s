@@ -662,9 +662,9 @@ func (c *IPAMContext) nodeInit(ctx context.Context) error {
 	}
 
 	// Now that Custom Networking is (potentially) enabled, Security Groups for Pods can be enabled for IPv4 nodes.
-	if c.enablePodENI {
-		c.tryEnableSecurityGroupsForPods(ctx)
-	}
+	// if c.enablePodENI {
+	// 	c.tryEnableSecurityGroupsForPods(ctx)
+	// }
 
 	if !c.disableENIProvisioning {
 		if c.enableIPv6 {
@@ -805,10 +805,10 @@ func (c *IPAMContext) StartNodeIPPoolManager(ctx context.Context) {
 }
 
 func (c *IPAMContext) updateIPPoolIfRequired(ctx context.Context) {
-	// When IPv4 Security Groups for Pods is configured, do not write to CNINode until there is room for a trunk ENI
-	if c.enablePodENI && c.enableIPv4 && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
-		c.tryEnableSecurityGroupsForPods(ctx)
-	}
+	// // When IPv4 Security Groups for Pods is configured, do not write to CNINode until there is room for a trunk ENI
+	// if c.enablePodENI && c.enableIPv4 && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == "" {
+	// 	c.tryEnableSecurityGroupsForPods(ctx)
+	// }
 
 	isScaleDownExecuted := false
 	for networkCard, decisions := range c.isDatastorePoolTooLow() {
@@ -1581,10 +1581,10 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 	// To reduce the number of EC2 API calls, skip reconciliation if IPs were recently added to the datastore.
 	timeSinceLast := time.Since(c.lastNodeIPPoolAction)
 	// Make an exception if node needs a trunk ENI and one is not currently attached.
-	needsTrunkEni := c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == ""
-	if timeSinceLast <= interval && !needsTrunkEni {
-		return
-	}
+	// needsTrunkEni := c.enablePodENI && c.dataStoreAccess.GetDataStore(DefaultNetworkCardIndex).GetTrunkENI() == ""
+	// if timeSinceLast <= interval && !needsTrunkEni {
+	// 	return
+	// }
 	var metadataResult awsutils.DescribeAllENIsResult
 
 	prometheusmetrics.IpamdActionsInprogress.WithLabelValues("nodeIPPoolReconcile").Add(float64(1))
@@ -1636,9 +1636,9 @@ func (c *IPAMContext) nodeIPPoolReconcile(ctx context.Context, interval time.Dur
 				}
 			}
 
-			if c.enablePodENI && metadataResult.TrunkENI != "" {
-				log.Debugf("Trunk interface (%s) has been added to the node already.", metadataResult.TrunkENI)
-			}
+			// if c.enablePodENI && metadataResult.TrunkENI != "" {
+			// 	log.Debugf("Trunk interface (%s) has been added to the node already.", metadataResult.TrunkENI)
+			// }
 			// Update trunk ENI
 			trunkENI = metadataResult.TrunkENI
 			// Just copy values of the EFA set
@@ -2005,7 +2005,8 @@ func parseMaxPodsForInstanceFromFile(content string, instanceType string) (int64
 
 // UseCustomNetworkCfg returns whether Pods needs to use pod specific configuration or not.
 func UseCustomNetworkCfg() bool {
-	return parseBoolEnvVar(envCustomNetworkCfg, false)
+	// return parseBoolEnvVar(envCustomNetworkCfg, false)
+	return false
 }
 
 // ManageENIsOnNonSchedulableNode returns whether IPAMd should manage ENIs on the node or not.
@@ -2015,7 +2016,8 @@ func ManageENIsOnNonSchedulableNode() bool {
 
 // UseSubnetDiscovery returns whether we should use enhanced subnet selection or not when creating ENIs.
 func UseSubnetDiscovery() bool {
-	return parseBoolEnvVar(envSubnetDiscovery, true)
+	// return parseBoolEnvVar(envSubnetDiscovery, true)
+	return false
 }
 
 func parseBoolEnvVar(envVariableName string, defaultVal bool) bool {
@@ -2076,7 +2078,8 @@ func disableLeakedENICleanup() bool {
 	// 2. ENI provisioning is disabled, so ENIs are not managed by IPAMD
 	// 3. CNI is operating in IMDS only mode
 	// 4. Environment var explicitly disabling task is set
-	return isIPv6Enabled() || disableENIProvisioning() || enableImdsOnlyMode() || utils.GetBoolAsStringEnvVar(envDisableLeakedENICleanup, false)
+	// return isIPv6Enabled() || disableENIProvisioning() || enableImdsOnlyMode() || utils.GetBoolAsStringEnvVar(envDisableLeakedENICleanup, false)
+	return true
 }
 
 func enableImdsOnlyMode() bool {
@@ -2084,7 +2087,8 @@ func enableImdsOnlyMode() bool {
 }
 
 func EnablePodENI() bool {
-	return utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
+	// return utils.GetBoolAsStringEnvVar(envEnablePodENI, false)
+	return true
 }
 
 func enableMultiNICSupport() bool {
