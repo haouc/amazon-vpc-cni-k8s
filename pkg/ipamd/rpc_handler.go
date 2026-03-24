@@ -103,7 +103,7 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 		log.Warnf("Send AddNetworkReply: Failed to get pod: %v", err)
 		return &failureResponse, nil
 	}
-	if val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]; branch && s.ipamContext.enablePodENI {
+	if val, branch := pod.Annotations["dra.k8s.aws/pod-eni"]; branch && s.ipamContext.enablePodENI {
 		// limits := pod.Spec.Containers[0].Resources.Limits
 
 		// for resName := range limits {
@@ -396,7 +396,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 					err = fmt.Errorf("pod UID mismatch: got %s, expected %s", in.K8S_POD_UID, pod.ObjectMeta.UID)
 					return &rpc.DelNetworkReply{Success: false}, err
 				}
-				val, branch := pod.Annotations["vpc.amazonaws.com/pod-eni"]
+				val, branch := pod.Annotations["dra.k8s.aws/pod-eni"]
 				if branch {
 					// Parse JSON data
 					var podENIData []PodENIData

@@ -222,6 +222,87 @@ var _ = Describe("Primary ENI Exclusion Tests", func() {
 				})
 			})
 		})
+
+		Context("when primary subnet has foreign cluster tag but no CNI tag", func() {
+			var deployment *v1.Deployment
+
+			BeforeEach(func() {
+				By("Tagging primary subnet with a different cluster's tag (no CNI tag)")
+				_, err := f.CloudServices.EC2().
+					CreateTags(
+						context.TODO(),
+						[]string{primarySubnetID},
+						[]ec2types.Tag{
+							{
+								Key:   aws.String("kubernetes.io/cluster/different-cluster"),
+								Value: aws.String("shared"),
+							},
+						},
+					)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Restarting aws-node pods to apply changes")
+				restartAwsNodePods()
+				time.Sleep(30 * time.Second)
+			})
+
+			AfterEach(func() {
+				if deployment != nil {
+					err := f.K8sResourceManagers.DeploymentManager().DeleteAndWaitTillDeploymentIsDeleted(deployment)
+					Expect(err).ToNot(HaveOccurred())
+				}
+
+				By("Removing foreign cluster tag from primary subnet")
+				_, err := f.CloudServices.EC2().
+					DeleteTags(
+						context.TODO(),
+						[]string{primarySubnetID},
+						[]ec2types.Tag{
+							{
+								Key:   aws.String("kubernetes.io/cluster/different-cluster"),
+								Value: aws.String("shared"),
+							},
+						},
+					)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Restarting aws-node pods to restore default configuration")
+				restartAwsNodePods()
+				time.Sleep(30 * time.Second)
+			})
+
+			It("should still allocate pod IPs from primary subnet (backwards compatibility)", func() {
+				By("Creating deployment to verify pods get IPs successfully")
+				container := manifest.NewNetCatAlpineContainer(f.Options.TestImageRegistry).
+					Command([]string{"sleep"}).
+					Args([]string{"3600"}).
+					Build()
+
+				deploymentBuilder := manifest.NewBusyBoxDeploymentBuilder(f.Options.TestImageRegistry).
+					Container(container).
+					Replicas(3).
+					PodLabel(primaryExclusionPodLabelKey, primaryExclusionPodLabelVal).
+					NodeName(*primaryInstance.PrivateDnsName).
+					Build()
+
+				var err error
+				deployment, err = f.K8sResourceManagers.DeploymentManager().
+					CreateAndWaitTillDeploymentIsReady(deploymentBuilder, utils.DefaultDeploymentReadyTimeout)
+				Expect(err).ToNot(HaveOccurred())
+
+				By("Verifying all pods are running with IPs (primary subnet not wrongly excluded)")
+				pods, err := f.K8sResourceManagers.PodManager().GetPodsWithLabelSelector(primaryExclusionPodLabelKey, primaryExclusionPodLabelVal)
+				Expect(err).ToNot(HaveOccurred())
+
+				runningWithIP := 0
+				for _, pod := range pods.Items {
+					if pod.Status.Phase == corev1.PodRunning && pod.Status.PodIP != "" {
+						runningWithIP++
+					}
+				}
+				Expect(runningWithIP).To(Equal(3), "All 3 pods should be running with IPs, proving primary subnet was not excluded")
+			})
+		})
 	})
 })
 
