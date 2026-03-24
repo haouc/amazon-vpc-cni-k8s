@@ -133,11 +133,12 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			return &failureResponse, nil
 		}
 		firstENI := podENIData[0]
-		// Get pod IPv4 or IPv6 address based on mode
+		// Read addresses gated by cluster IP family configuration
+		if s.ipamContext.enableIPv4 {
+			ipv4Addr = firstENI.PrivateIP
+		}
 		if s.ipamContext.enableIPv6 {
 			ipv6Addr = firstENI.IPV6Addr
-		} else {
-			ipv4Addr = firstENI.PrivateIP
 		}
 		branchENIMAC = firstENI.IfAddress
 		vlanID = firstENI.VlanID
@@ -148,13 +149,13 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			return &failureResponse, nil
 		}
 		var subnetCIDR *net.IPNet
-		if s.ipamContext.enableIPv6 {
+		if s.ipamContext.enableIPv6 && firstENI.SubnetV6CIDR != "" {
 			_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetV6CIDR)
 			if err != nil {
 				log.Errorf("Failed to parse V6 subnet CIDR: %s", firstENI.SubnetV6CIDR)
 				return &failureResponse, nil
 			}
-		} else {
+		} else if ipv4Addr != "" {
 			_, subnetCIDR, err = net.ParseCIDR(firstENI.SubnetCIDR)
 			if err != nil {
 				log.Errorf("Failed to parse V4 subnet CIDR: %s", firstENI.SubnetCIDR)
@@ -162,11 +163,11 @@ func (s *server) AddNetwork(ctx context.Context, in *rpc.AddNetworkRequest) (*rp
 			}
 		}
 		var gw net.IP
-		// For IPv6, the gateway is derived from the RA route on the primary ENI. The primary ENI is always in the same subnet as the trunk and branch ENI.
-		// For IPv4, the gateway is always the .1 address for the subnet CIDR.
+		// IPv6 gateway is derived from RA on the primary ENI.
+		// IPv4 gateway is always the .1 address for the subnet CIDR.
 		if s.ipamContext.enableIPv6 {
 			gw = networkutils.GetIPv6Gateway()
-		} else {
+		} else if subnetCIDR != nil {
 			gw = networkutils.GetIPv4Gateway(subnetCIDR)
 		}
 		podENISubnetGW = gw.String()
@@ -407,7 +408,7 @@ func (s *server) DelNetwork(ctx context.Context, in *rpc.DelNetworkRequest) (*rp
 					return &rpc.DelNetworkReply{
 						Success:              true,
 						PodVlanId:            int32(podENIData[0].VlanID),
-						IPAllocationMetadata: []*rpc.IPAllocationMetadata{{IPv4Addr: podENIData[0].PrivateIP}},
+						IPAllocationMetadata: []*rpc.IPAllocationMetadata{{IPv4Addr: podENIData[0].PrivateIP, IPv6Addr: podENIData[0].IPV6Addr}},
 						NetworkPolicyMode:    s.ipamContext.networkPolicyMode,
 					}, err
 				}
